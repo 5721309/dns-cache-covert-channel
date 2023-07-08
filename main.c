@@ -184,14 +184,16 @@ getname()
 static long
 get_dns_response_time_ms(char* dname)
 {
+	static unsigned int i_reqs = 0;
 	struct timespec time_start, time_end, time_diff;
 	struct addrinfo* ainfo;
+	long ms;
 	int err;
-	long ms = -1;
 
 	timespec_get(&time_start, TIME_UTC);
 	err = getaddrinfo(dname, NULL, NULL, &ainfo);
 	timespec_get(&time_end, TIME_UTC);
+	i_reqs += 1;
 	switch (err) {
 		case 0: case EAI_NONAME:
 			time_diff = diff_timespec(time_end, time_start);
@@ -201,6 +203,17 @@ get_dns_response_time_ms(char* dname)
 				fprintf(stderr, "\033[91m%s: %ld ms\033[0m\n", dname, ms);
 			if (0 == err)
 				freeaddrinfo(ainfo);
+			if (0 == i_reqs % rpb) {
+				nanosleep(&(struct timespec){
+					.tv_sec = block_delay_ms / 1000,
+					.tv_nsec = (block_delay_ms % 1000) * 1000000
+				}, NULL);
+			} else {
+				nanosleep(&(struct timespec){
+					.tv_sec = bit_delay_ms / 1000,
+					.tv_nsec = (bit_delay_ms % 1000) * 1000000
+				}, NULL);
+			}
 			return ms;
 		default:
 			perror(gai_strerror(err));
@@ -244,17 +257,6 @@ do_mode_statistics()
 	i_stats = 0;
 	for (i = 1; i <= n_stats; ++i) {
 		account_stats(getname());
-		if (0 == i % rpb) {
-			nanosleep(&(struct timespec){
-				.tv_sec = block_delay_ms / 1000,
-				.tv_nsec = (block_delay_ms % 1000) * 1000000
-			}, NULL);
-		} else {
-			nanosleep(&(struct timespec){
-				.tv_sec = bit_delay_ms / 1000,
-				.tv_nsec = (bit_delay_ms % 1000) * 1000000
-			}, NULL);
-		}
 	}
 
 	m_tau = (double)sum_tau / n_stats;  // cached
@@ -273,8 +275,6 @@ do_mode_statistics()
 	sd_t = sqrt(sd_t / (n_stats - 1));
 	edge_t = m_t - ceil(3 * sd_t);  // 3-sigma criteria
 
-	// TODO посчитать вероятность ошибки -- пересечения распределений
-
 	printf("%ld %ld\n", edge_tau, edge_t);
 }
 
@@ -282,77 +282,36 @@ do_mode_statistics()
 static inline long
 send_bit(bool bit)
 {
-	static int sent = 0;
-	static long ms;
 	char* dname = getname();  // always must be called
 	
-	ms = 0;
-	if (bit) {
-		ms = get_dns_response_time_ms(dname);
-		sent += 1;
-		if (sent % rpb == 0) {
-			nanosleep(&(struct timespec){
-				.tv_sec = block_delay_ms / 1000,
-				.tv_nsec = (block_delay_ms % 1000) * 1000000
-			}, NULL);
-		}
-	} 
-	nanosleep(&(struct timespec){
-		.tv_sec = bit_delay_ms / 1000,
-		.tv_nsec = (bit_delay_ms % 1000) * 1000000
-	}, NULL);
-	return ms;
+	return bit ? get_dns_response_time_ms(dname) : 0;
 }
 
 static inline bool
 receive_bit()
 {
-	static int n_ones = 0;
-	static bool bit;
 	char* dname = getname();  // always must be called
 
-	bit = get_dns_response_time_ms(dname) <= edge_tau;
-	if (bit) {
-		n_ones += 1;
-		if (n_ones % rpb == 0) {
-			nanosleep(&(struct timespec){
-				.tv_sec = block_delay_ms / 1000,
-				.tv_nsec = (block_delay_ms % 1000) * 1000000
-			}, NULL);
-		}
-	}
-	nanosleep(&(struct timespec){
-		.tv_sec = bit_delay_ms / 1000,
-		.tv_nsec = (bit_delay_ms % 1000) * 1000000
-	}, NULL);
-	return bit;
+	return get_dns_response_time_ms(dname) <= edge_tau;
 }
 
 static void
 send_byte(uint8_t byte)
 {
-	send_bit((byte >> 0) & 1);
-	send_bit((byte >> 1) & 1);
-	send_bit((byte >> 2) & 1);
-	send_bit((byte >> 3) & 1);
-	send_bit((byte >> 4) & 1);
-	send_bit((byte >> 5) & 1);
-	send_bit((byte >> 6) & 1);
-	send_bit((byte >> 7) & 1);
+	send_bit((byte >> 0) & 1); send_bit((byte >> 1) & 1);
+	send_bit((byte >> 2) & 1); send_bit((byte >> 3) & 1);
+	send_bit((byte >> 4) & 1); send_bit((byte >> 5) & 1);
+	send_bit((byte >> 6) & 1); send_bit((byte >> 7) & 1);
 }
 
 static uint8_t
 receive_byte()
 {
 	uint8_t byte = 0;
-	byte |= receive_bit() << 0;
-	byte |= receive_bit() << 1;
-	byte |= receive_bit() << 2;
-	byte |= receive_bit() << 3;
-	byte |= receive_bit() << 4;
-	byte |= receive_bit() << 5;
-	byte |= receive_bit() << 6;
-	byte |= receive_bit() << 7;
+	byte |= receive_bit() << 0; byte |= receive_bit() << 1;
+	byte |= receive_bit() << 2; byte |= receive_bit() << 3;
+	byte |= receive_bit() << 4; byte |= receive_bit() << 5;
+	byte |= receive_bit() << 6; byte |= receive_bit() << 7;
 	return byte;
 }
 
