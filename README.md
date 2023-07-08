@@ -18,10 +18,10 @@ given time (1) from uncached response time (0).
 Note that this channel has low bandwidth because
 to read each bit in a message receiver sends
 one dns request.
-If each uncached request is processed in $70$ ms
-and each cached is processed in $7$ ms,
+If each uncached request is processed in $70 \textup{ ms}$
+and each cached is processed in $7 \textup{ ms}$,
 then to receive a message of size $1024$ bits having half of ones
-you have to wait $512 \cdot 70 + 512 \cdot 7$ (ms) $= 39427$ ms $\approx 39$ s
+you have to wait $512 \cdot 70 + 512 \cdot 7 \textup{ (ms)} = 39427 \textup{ ms} \approx 39 \textup{ s}$
 each bit in a message is at least one dns request
 and one dns response.
 
